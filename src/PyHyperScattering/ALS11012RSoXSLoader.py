@@ -28,6 +28,7 @@ class ALS11012RSoXSLoader(FileLoader):
     md_loading_is_quick = True
     
     
+    
     def __init__(self,corr_mode=None,user_corr_func=None,dark_pedestal=0,exposure_offset=0.002,dark_subtract=False,data_collected_after_mar2021=False,constant_md={}):
         '''
         Args:
@@ -93,19 +94,20 @@ class ALS11012RSoXSLoader(FileLoader):
             file_skip (str): string that, if in file name, means file should be skipped.
             md_filter (dict): dict of required metadata values.  this will be appended with dark images only, no need to put that here.
         '''
-        
         md_filter.update({self.shutter_inhibit:1})
         
         for file in os.listdir(basepath):
             if (re.match(self.file_ext,file) is not None) and file_filter in file and file_skip not in file:
                 if self.md_loading_is_quick:
                     #if metadata loading is quick, we can just peek at the metadata and decide what to do
-                    md = self.peekAtMd(basepath+file)
+                    #md = self.peekAtMd(basepath+file)
+                    md = self.peekAtMd(f'{basepath}/{file}')
                     img = None
                 else:
-                        input_image = fits.open(basepath+file)
-                        md = self.normalizeMetadata(dict(zip(input_image[0].header.keys(),input_image[0].header.values())))
-                        img = input_image[2].data
+                        #input_image = fits.open(basepath+file)
+                    input_image = fits.open(f'{basepath}/{file}')
+                    md = self.normalizeMetadata(dict(zip(input_image[0].header.keys(),input_image[0].header.values())))
+                    img = input_image[2].data
                 load_this_image = True
                 for key,val in md_filter.items():
                     if md[key] != md_filter[key]:
@@ -113,11 +115,13 @@ class ALS11012RSoXSLoader(FileLoader):
                         #print(f'Not loading {file}, expected {key} to be {val} but it was {md[key]}')
                 if load_this_image:
                     if img == None:
-                        input_image = fits.open(basepath+file)
+                        #input_image = fits.open(basepath+file)
+                        input_image = fits.open(f'{basepath}/{file}')
                         img = input_image[2].data
                     print(f'Loading dark for {md["EXPOSURE"]} from {file}')
                     exptime = md['EXPOSURE']
-                    self.darks[exptime] = img
+                    self.darks[exptime] = img # this is re-writing the key if you have two darks at
+                    # different energies
     def loadSingleImage(self,filepath,coords=None,return_q=False,**kwargs):
         '''
         THIS IS A HELPER FUNCTION, mostly - should not be called directly unless you know what you are doing
@@ -165,8 +169,16 @@ class ALS11012RSoXSLoader(FileLoader):
             except KeyError:
                 warnings.warn(f"Could not find a dark image with exposure time {headerdict['EXPOSURE']}.  Using zeros.",stacklevel=2)
                 darkimg = np.zeros_like(img)
+            img += self.dark_pedestal
+            img = (img - darkimg)/corr
+            img -= self.dark_pedestal/corr
 
-            img = (img-darkimg+self.dark_pedestal)/corr
+        new_shape = (1024,1024)
+        shape = (new_shape[0], img.shape[0] // new_shape[0],
+        new_shape[1], img.shape[1] // new_shape[1])
+        img = img.reshape(shape).mean(-1).mean(1)
+
+            #
         
         # now, match up the dims and coords
         if return_q:
@@ -175,6 +187,7 @@ class ALS11012RSoXSLoader(FileLoader):
             qy = (np.arange(1,img.shape[1]+1)-headerdict['beamcenter_y'])*qpx
             # now, match up the dims and coords
             return xr.DataArray(img,dims=['qy','qx'],coords={'qy':qy,'qx':qx},attrs=headerdict)
+        
         return xr.DataArray(img,dims=['pix_x','pix_y'],attrs=headerdict)
         
     def peekAtMd(self,file):

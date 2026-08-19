@@ -240,7 +240,7 @@ class SST1RSoXSDB:
         Returns:
             Pandas dataframe containing the results of the search, or an empty dataframe if the search fails
         """
-
+        print('aqui')
         # Pull in the reference to the databroker.client.CatalogOfBlueskyRuns attribute
         bsCatalog = self.c
 
@@ -1180,3 +1180,7 @@ class SST1RSoXSDB:
             )
         else:
             return xr.DataArray(img, dims=["pix_x", "pix_y"], attrs=headerdict)
+
+    def ret_profile(self, scan_no):
+        return self.c[scan_no]
+    
